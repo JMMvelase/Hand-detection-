@@ -70,6 +70,11 @@ while True:
             bbox = int(bboxC.xmin * iw), int(bboxC.ymin * ih), \
                    int(bboxC.width * iw), int(bboxC.height * ih)
             cv2.rectangle(img, bbox, (0, 255, 0), 2)
+            
+    # Function to get the hand vector
+    def get_hand_vector(hand_landmarks, img_shape):
+        h, w, _ = img_shape
+        return [ (lm.x * w, lm.y * h) for lm in hand_landmarks.landmark ]
 
     # Draw hand landmarks and check if the hand is open
     hand_open = False
