@@ -30,3 +30,6 @@ SASL-Hand-Detection/
 │── README.md   
 
 pip install -r requirements.txt
+
+
+git clone https://github.com/yourusername/SASL-Hand-Detection.git
