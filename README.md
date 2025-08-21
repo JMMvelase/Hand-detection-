@@ -8,7 +8,7 @@ It collects landmark data, trains a machine learning model, and predicts SASL ha
 
 📷 Real-time hand tracking with MediaPipe.
 
-📝 Dataset collection for each SASL letter (currently A–F, left & right hands).
+📝 Dataset collection for each SASL letter.
 
 🤖 RandomForestClassifier for sign recognition.
 
