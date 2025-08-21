@@ -19,7 +19,7 @@ SASL-Hand-Detection/
 
 │── data.csv                # Collected hand landmark dataset
 
-│── collect_data.py         # Script to record MediaPipe landmarks
+│── abc_Set.py         # Script to record MediaPipe landmarks
 
 │── train_model.py          # Trains ML model on collected data
 
