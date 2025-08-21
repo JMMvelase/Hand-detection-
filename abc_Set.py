@@ -31,12 +31,16 @@ def extract_landmarks(hand_landmarks, shape):
 
 # === Camera setup ===
 cap = cv2.VideoCapture(0)
+if not cap.isOpened():
+    raise RuntimeError("Could not open webcam.")
+
 letter_index = 0
 print("📷 SASL Trainer: SPACE = capture, N = next letter, ESC = quit")
 
 while True:
     ret, frame = cap.read()
     if not ret:
+        print("Failed to read from camera.")
         break
 
     frame = cv2.flip(frame, 1)
@@ -55,9 +59,11 @@ while True:
     if results.multi_hand_landmarks:
         for i, hand_landmarks in enumerate(results.multi_hand_landmarks):
             mp_drawing.draw_landmarks(frame, hand_landmarks, mp_hands.HAND_CONNECTIONS)
-
-            # Get handedness label (Left/Right)
-            handedness_label = results.multi_handedness[i].classification[0].label
+            # Get handedness label safely
+            if results.multi_handedness and i < len(results.multi_handedness):
+                handedness_label = results.multi_handedness[i].classification[0].label
+            else:
+                handedness_label = "Unknown"
 
     # On-screen instructions
     cv2.putText(frame, f"Letter: {letter}", (10, 40),
@@ -72,7 +78,10 @@ while True:
     if key == 32 and results.multi_hand_landmarks:
         for i, hand_landmarks in enumerate(results.multi_hand_landmarks):
             x_list, y_list = extract_landmarks(hand_landmarks, frame.shape)
-            handedness_label = results.multi_handedness[i].classification[0].label
+            if results.multi_handedness and i < len(results.multi_handedness):
+                handedness_label = results.multi_handedness[i].classification[0].label
+            else:
+                handedness_label = "Unknown"
             row = x_list + y_list + [letter, handedness_label]
             with open(CSV_PATH, "a", newline="") as f:
                 writer = csv.writer(f)
