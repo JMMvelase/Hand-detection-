@@ -16,11 +16,17 @@ It collects landmark data, trains a machine learning model, and predicts SASL ha
 
 
 SASL-Hand-Detection/
+
 │── data.csv                # Collected hand landmark dataset
+
 │── collect_data.py         # Script to record MediaPipe landmarks
+
 │── train_model.py          # Trains ML model on collected data
+
 │── predict.py              # Real-time SASL prediction
+
 │── requirements.txt        # Python dependencies
+
 │── README.md   
 
 pip install -r requirements.txt
