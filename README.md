@@ -23,7 +23,7 @@ SASL-Hand-Detection/
 
 │── training.py          # Trains ML model on collected data
 
-│── predict.py              # Real-time SASL prediction
+│── test.py              # Real-time SASL prediction
 
 │── requirements.txt        # Python dependencies
 
