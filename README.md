@@ -21,7 +21,7 @@ SASL-Hand-Detection/
 
 │── abc_Set.py         # Script to record MediaPipe landmarks
 
-│── train_model.py          # Trains ML model on collected data
+│── training.py          # Trains ML model on collected data
 
 │── predict.py              # Real-time SASL prediction
 
