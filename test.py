@@ -1,17 +1,21 @@
 import cv2
 import mediapipe as mp
 import joblib
-import os
+import pyttsx3
+import time
 
-MODEL_PATH = "sasl_model.pkl"
-if not os.path.exists(MODEL_PATH):
-    raise FileNotFoundError(f"Model file not found at {MODEL_PATH}")
+# Load trained model
+model = joblib.load("sasl_model.pkl")
 
-model = joblib.load(MODEL_PATH)
-
+# Initialize MediaPipe Hands
 mp_hands = mp.solutions.hands
 mp_drawing = mp.solutions.drawing_utils
-hands = mp_hands.Hands(max_num_hands=1, min_detection_confidence=0.7)
+hands = mp_hands.Hands(max_num_hands=2, min_detection_confidence=0.7)
+
+# Initialize TTS engine
+engine = pyttsx3.init()
+last_pred = None
+last_time = 0
 
 def extract_landmarks(hand_landmarks, shape):
     h, w, _ = shape
@@ -20,34 +24,42 @@ def extract_landmarks(hand_landmarks, shape):
     return x_list + y_list
 
 cap = cv2.VideoCapture(0)
-if not cap.isOpened():
-    raise RuntimeError("Could not open webcam.")
-
-print("🖐 SASL Recognizer: ESC = quit")
 
 while True:
     ret, frame = cap.read()
     if not ret:
-        print("Failed to read from camera.")
         break
+
     frame = cv2.flip(frame, 1)
     rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
     results = hands.process(rgb)
 
-    if results.multi_hand_landmarks:
-        for hand_landmarks in results.multi_hand_landmarks:
+    if results.multi_hand_landmarks and results.multi_handedness:
+        for i, hand_landmarks in enumerate(results.multi_hand_landmarks):
             mp_drawing.draw_landmarks(frame, hand_landmarks, mp_hands.HAND_CONNECTIONS)
-            features = extract_landmarks(hand_landmarks, frame.shape)
-            if len(features) == 42:  # 21 x, 21 y
-                pred = model.predict([features])[0]
-                cv2.putText(frame, f"Prediction: {pred}", (10, 40),
-                            cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
-            else:
-                cv2.putText(frame, "Invalid hand landmarks", (10, 40),
-                            cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2)
 
-    cv2.putText(frame, "ESC=Quit", (10, frame.shape[0]-20),
-                cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 2)
+            # Predict letter
+            features = extract_landmarks(hand_landmarks, frame.shape)
+            pred = model.predict([features])[0]
+
+            # Get hand orientation
+            handedness_label = results.multi_handedness[i].classification[0].label  # 'Left' or 'Right'
+
+            # Prepare display and TTS text
+            display_text = f"{handedness_label} hand: {pred}"
+
+            # Only speak new predictions or after cooldown
+            current_time = time.time()
+            if display_text != last_pred or current_time - last_time > 2:  # 2 sec cooldown
+                engine.say(display_text)
+                engine.runAndWait()
+                last_pred = display_text
+                last_time = current_time
+
+            # Show on webcam
+            cv2.putText(frame, display_text, (10, 40 + 30*i),
+                        cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
+
     cv2.imshow("SASL Recognizer", frame)
     if cv2.waitKey(1) & 0xFF == 27:  # ESC
         break
