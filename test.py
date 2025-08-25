@@ -3,66 +3,188 @@ import mediapipe as mp
 import joblib
 import pyttsx3
 import time
+import os
+from gtts import gTTS
+from playsound import playsound
 
-# Load trained model
-model = joblib.load("sasl_model.pkl")
 
-# Initialize MediaPipe Hands
-mp_hands = mp.solutions.hands
-mp_drawing = mp.solutions.drawing_utils
-hands = mp_hands.Hands(max_num_hands=2, min_detection_confidence=0.7)
+# ------------------------------
+# Initialization Functions
+# ------------------------------
+def load_model(model_path="sasl_model.pkl"):
+    """Load the trained sign language model."""
+    if not os.path.exists(model_path):
+        raise FileNotFoundError(f"Model file not found: {model_path}")
+    return joblib.load(model_path)
 
-# Initialize TTS engine
-engine = pyttsx3.init()
-last_pred = None
-last_time = 0
 
-def extract_landmarks(hand_landmarks, shape):
-    h, w, _ = shape
-    x_list = [lm.x * w for lm in hand_landmarks.landmark]
-    y_list = [lm.y * h for lm in hand_landmarks.landmark]
-    return x_list + y_list
+def init_tts():
+    """Initialize pyttsx3 TTS with custom settings (SAPI5 for Windows)."""
+    engine = pyttsx3.init(driverName="sapi5")
+    voices = engine.getProperty("voices")
+    if len(voices) > 1:
+        engine.setProperty("voice", voices[1].id)  # use 2nd voice if available
+    engine.setProperty("rate", 150)
+    engine.setProperty("volume", 0.9)
+    return engine
 
-cap = cv2.VideoCapture(0)
 
-while True:
-    ret, frame = cap.read()
-    if not ret:
-        break
+def speak_text(text):
+    """Convert text to speech using gTTS + playsound."""
+    try:
+        tts = gTTS(text=text, lang="en")
+        filename = "temp_speech.mp3"
+        tts.save(filename)
+        playsound(filename)
+        os.remove(filename)
+        return True
+    except Exception as e:
+        print(f"[TTS Error] {e}")
+        return False
 
-    frame = cv2.flip(frame, 1)
-    rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-    results = hands.process(rgb)
 
-    if results.multi_hand_landmarks and results.multi_handedness:
-        for i, hand_landmarks in enumerate(results.multi_hand_landmarks):
-            mp_drawing.draw_landmarks(frame, hand_landmarks, mp_hands.HAND_CONNECTIONS)
+# ------------------------------
+# Helper Functions
+# ------------------------------
+def extract_landmarks(hand_landmarks, frame_shape):
+    """Extract & normalize hand landmarks from MediaPipe output."""
+    h, w, _ = frame_shape
+    x_coords = [lm.x * w for lm in hand_landmarks.landmark]
+    y_coords = [lm.y * h for lm in hand_landmarks.landmark]
+    return x_coords + y_coords
 
-            # Predict letter
-            features = extract_landmarks(hand_landmarks, frame.shape)
-            pred = model.predict([features])[0]
 
-            # Get hand orientation
-            handedness_label = results.multi_handedness[i].classification[0].label  # 'Left' or 'Right'
+def draw_info(frame, fps, speech_enabled):
+    """Overlay FPS and speech status on the frame."""
+    cv2.putText(frame, f"FPS: {fps:.1f}", (frame.shape[1] - 120, 30),
+                cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 255), 2)
+    status = "Speech: ON" if speech_enabled else "Speech: OFF"
+    cv2.putText(frame, status, (frame.shape[1] - 120, 60),
+                cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 255), 2)
 
-            # Prepare display and TTS text
-            display_text = f"{handedness_label} hand: {pred}"
 
-            # Only speak new predictions or after cooldown
-            current_time = time.time()
-            if display_text != last_pred or current_time - last_time > 2:  # 2 sec cooldown
-                engine.say(display_text)
-                engine.runAndWait()
-                last_pred = display_text
-                last_time = current_time
+def calculate_fps(frame_count, start_time):
+    """Calculate frames per second."""
+    elapsed = time.time() - start_time
+    if elapsed == 0:
+        return 0, start_time, frame_count
+    fps = frame_count / elapsed
+    return fps, time.time(), 0  # reset counter every second
 
-            # Show on webcam
-            cv2.putText(frame, display_text, (10, 40 + 30*i),
-                        cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
 
-    cv2.imshow("SASL Recognizer", frame)
-    if cv2.waitKey(1) & 0xFF == 27:  # ESC
-        break
+# ------------------------------
+# Main Application
+# ------------------------------
+def main():
+    try:
+        # Load model & initialize tools
+        model = load_model()
+        engine = init_tts()
+        mp_hands = mp.solutions.hands
+        mp_drawing = mp.solutions.drawing_utils
+        hands = mp_hands.Hands(max_num_hands=2,
+                               min_detection_confidence=0.7,
+                               min_tracking_confidence=0.5)
 
-cap.release()
-cv2.destroyAllWindows()
+        # Open webcam
+        cap = cv2.VideoCapture(0)
+        if not cap.isOpened():
+            raise RuntimeError("Webcam not accessible")
+
+        cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
+        cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
+
+        print("👋 SASL Recognizer started!")
+        print("Controls: ESC = Quit, S = Toggle speech")
+
+        # Variables
+        last_pred, last_time = None, 0
+        speech_enabled, speech_failed = True, False
+        frame_count, fps_start = 0, time.time()
+        fps = 0.0
+
+        # Main loop
+        while True:
+            ret, frame = cap.read()
+            if not ret:
+                print("❌ Frame grab failed")
+                break
+
+            frame = cv2.flip(frame, 1)
+            rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+            results = hands.process(rgb)
+            frame_count += 1
+
+            # Update FPS once per second
+            if time.time() - fps_start >= 1.0:
+                fps, fps_start, frame_count = calculate_fps(frame_count, fps_start)
+
+            predictions = []
+
+            # Process detected hands
+            if results.multi_hand_landmarks and results.multi_handedness:
+                for i, (landmarks, handedness) in enumerate(
+                        zip(results.multi_hand_landmarks, results.multi_handedness)):
+
+                    # Draw landmarks with color per hand
+                    color = (0, 255, 0) if i == 0 else (255, 0, 0)
+                    mp_drawing.draw_landmarks(
+                        frame, landmarks, mp_hands.HAND_CONNECTIONS,
+                        mp_drawing.DrawingSpec(color=color, thickness=2, circle_radius=2))
+
+                    # Predict
+                    features = extract_landmarks(landmarks, frame.shape)
+                    pred = model.predict([features])[0]
+                    label = handedness.classification[0].label
+                    text = f"{label} hand: {pred}"
+                    predictions.append(text)
+
+                    # Display prediction
+                    cv2.putText(frame, text, (10, 40 + 30 * i),
+                                cv2.FONT_HERSHEY_SIMPLEX, 1, color, 2)
+
+                # Handle speech
+                if speech_enabled and predictions:
+                    combined_pred = " | ".join(predictions)
+                    if (combined_pred != last_pred or
+                            time.time() - last_time > 2 or
+                            speech_failed):
+                        if speak_text(combined_pred):
+                            last_pred, last_time, speech_failed = combined_pred, time.time(), False
+                        else:
+                            speech_failed = True
+                            try:
+                                engine = init_tts()  # reinit if failed
+                            except:
+                                pass
+
+            # Draw overlays
+            draw_info(frame, fps, speech_enabled)
+            cv2.imshow("SASL Recognizer", frame)
+
+            # Keyboard controls
+            key = cv2.waitKey(1) & 0xFF
+            if key == 27:  # ESC
+                break
+            elif key == ord("s"):
+                speech_enabled = not speech_enabled
+                print(f"🔊 Speech {'enabled' if speech_enabled else 'disabled'}")
+
+    except Exception as e:
+        print(f"[Error] {e}")
+
+    finally:
+        print("\n🔒 Closing SASL Recognizer...")
+        try:
+            cap.release()
+        except:
+            pass
+        cv2.destroyAllWindows()
+        try:
+            engine.stop()
+        except:
+            pass
+
+
+if __name__ == "__main__":
+    main()
