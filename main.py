@@ -15,6 +15,9 @@ drawLines = mp.solutions.drawing_utils
 # Timer variables
 hand_open_start_time = None
 hand_open_duration = 5  # seconds
+# When True the program will close the camera automatically after `hand_open_duration` seconds
+# of continuous open-hand detection. Default is False to avoid unexpected camera shutdowns.
+auto_close_on_open = False
 
 def is_hand_open(hand_landmarks, img_height):
     """
@@ -92,8 +95,13 @@ while True:
         if hand_open_start_time is None:
             hand_open_start_time = time.time()
         elif time.time() - hand_open_start_time >= hand_open_duration:
-            print("Hand has been open for 4 seconds. Closing the camera.")
-            break
+            if auto_close_on_open:
+                print(f"Hand has been open for {hand_open_duration} seconds. Closing the camera.")
+                break
+            else:
+                # Auto-close is disabled: notify once and reset timer so we don't spam the log
+                print(f"Hand has been open for {hand_open_duration} seconds — auto-close disabled. Continuing.")
+                hand_open_start_time = None
     else:
         hand_open_start_time = None
 
@@ -101,8 +109,13 @@ while True:
     cv2.imshow("Image", img)
 
     # Break the loop on space key press
-    if cv2.waitKey(1) & 0xFF == ord(" "):
+    key = cv2.waitKey(1) & 0xFF
+    if key == ord(" "):
         break
+    # Toggle auto-close at runtime with 'c'
+    if key == ord('c'):
+        auto_close_on_open = not auto_close_on_open
+        print(f"Auto-close on open hand: {'enabled' if auto_close_on_open else 'disabled'}")
 
 # Release the capture and destroy all windows
 cap.release()
